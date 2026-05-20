@@ -694,31 +694,52 @@ btnSheet.addEventListener('click', generateSheet)
 // ─── 发送到简历联动 ────────────────────────────────────────────────────────────
 function sendToResume() {
   if (!img) { alert('请先上传并裁剪照片'); return }
-  const size = SIZES[selectedSizeIdx]
+
+  const btn = document.getElementById('btnSendResume')
+  btn.textContent = '⏳ 处理中…'
+  btn.disabled = true
+
+  // 使用一寸尺寸输出（295×413），高质量 JPEG
+  const size = SIZES[0]  // 一寸
   const out = buildOutput(size)
-  // 压缩到适合简历嵌入的尺寸（一寸 295×413，保持质量）
+
   out.toBlob(blob => {
     const reader = new FileReader()
     reader.onload = () => {
-      try {
-        localStorage.setItem('resume-photo-pending', reader.result)
-        // 跳转回简历生成器的 Review 页
-        const resumeOrigin = window.location.origin
-        const resumeBase = window.location.pathname.replace(/\/photo-tool\.html$/, '')
-        const reviewUrl = resumeOrigin + resumeBase + '/#/step/review'
-        // 更新发送按钮状态
-        const btn = document.getElementById('btnSendResume')
-        btn.textContent = '✓ 已发送！正在跳转…'
-        btn.style.background = '#34c759'
-        btn.style.borderColor = '#34c759'
-        btn.style.color = '#fff'
-        setTimeout(() => {
-          window.open(reviewUrl, '_blank') || (window.location.href = reviewUrl)
-        }, 600)
-      } catch(e) {
-        alert('写入失败，请检查浏览器是否允许 localStorage：' + e.message)
+      const dataUrl = reader.result
+
+      // ── 方案 A：通过 postMessage 推回父标签页（最可靠）──────────────
+      if (window.opener && !window.opener.closed) {
+        try {
+          window.opener.postMessage({ type: 'resume-photo', dataUrl }, '*')
+          btn.textContent = '✅ 已发送到简历！'
+          btn.style.background = '#34c759'
+          btn.style.borderColor = '#34c759'
+          btn.style.color = '#fff'
+          // 1.2 秒后关闭本标签页，让用户回到简历页面
+          setTimeout(() => window.close(), 1200)
+          return
+        } catch(e) {
+          console.warn('postMessage failed, falling back to localStorage', e)
+        }
       }
+
+      // ── 方案 B：localStorage + 跳转（opener 不可用时的兜底）──────────
+      try {
+        localStorage.setItem('resume-photo-pending', dataUrl)
+      } catch(e) {
+        alert('存储失败：' + e.message); btn.disabled = false; btn.textContent = '📋 发送到简历'; return
+      }
+      // 跳转到简历 Review 页（BrowserRouter，无 hash）
+      const base = window.location.pathname.replace(/\/photo-tool\.html.*$/, '')
+      const reviewUrl = window.location.origin + base + '/step/review'
+      btn.textContent = '✅ 跳转中…'
+      btn.style.background = '#34c759'
+      btn.style.borderColor = '#34c759'
+      btn.style.color = '#fff'
+      setTimeout(() => { window.location.href = reviewUrl }, 800)
     }
+    reader.onerror = () => { alert('读取失败，请重试'); btn.disabled = false; btn.textContent = '📋 发送到简历' }
     reader.readAsDataURL(blob)
   }, 'image/jpeg', 0.92)
 }
@@ -737,17 +758,17 @@ function sendToResume() {
     font-size: 14px; font-weight: 600; cursor: pointer;
     transition: all 0.2s; white-space: nowrap;
   `
-  btn.onmouseover = () => { if(!btn.disabled){ btn.style.background='#fff0f3' } }
-  btn.onmouseout = () => { if(!btn.disabled){ btn.style.background='#fff' } }
+  btn.onmouseover = () => { if(!btn.disabled && btn.style.color === 'rgb(255, 77, 109)'){ btn.style.background='#fff0f3' } }
+  btn.onmouseout  = () => { if(!btn.disabled && btn.style.color === 'rgb(255, 77, 109)'){ btn.style.background='#fff' } }
   btn.onclick = sendToResume
   btnGroup.appendChild(btn)
 
-  // Enable button once a photo is loaded
-  const observer = new MutationObserver(() => {
-    const canvas = document.getElementById('previewCanvas')
-    btn.disabled = !(canvas && canvas.style.display !== 'none')
-  })
-  observer.observe(document.getElementById('previewCanvas'), { attributes: true, attributeFilter: ['style'] })
+  // Enable button once a photo is loaded (observe preview canvas visibility)
+  const previewCanvas = document.getElementById('previewCanvas')
+  const tryEnable = () => { btn.disabled = !(previewCanvas && previewCanvas.style.display !== 'none') }
+  const observer = new MutationObserver(tryEnable)
+  observer.observe(previewCanvas, { attributes: true, attributeFilter: ['style'] })
+  tryEnable()
 })()
 </script>
 </body>
