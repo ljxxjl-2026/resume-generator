@@ -2,6 +2,9 @@ import { useNavigate } from 'react-router-dom'
 import { useResumeStore } from '@/store/resumeStore'
 import StepCard from '@/components/StepCard'
 import TextInput from '@/components/TextInput'
+import SelectInput from '@/components/SelectInput'
+
+const POLITICAL_OPTIONS = ['共青团员', '中共党员', '群众', '预备党员', '民主党派', '其他']
 
 export default function BasicInfo() {
   const navigate = useNavigate()
@@ -48,6 +51,12 @@ export default function BasicInfo() {
         onChange={(v) => setBasic({ birthdate: v })}
         placeholder="如：2002.08"
       />
+      <SelectInput
+        label="政治面貌"
+        value={basic.politicalStatus}
+        onChange={(v) => setBasic({ politicalStatus: v })}
+        options={POLITICAL_OPTIONS}
+      />
       <TextInput
         label="意向岗位"
         value={basic.expectedPosition}
@@ -60,7 +69,6 @@ export default function BasicInfo() {
         onChange={(v) => setBasic({ portfolio: v })}
         placeholder="（选填）粘贴链接"
       />
-
     </StepCard>
   )
 }

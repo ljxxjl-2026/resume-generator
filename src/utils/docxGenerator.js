@@ -1,15 +1,37 @@
-// src/utils/docxGenerator.js
 import PizZip from 'pizzip'
 import Docxtemplater from 'docxtemplater'
+import ImageModule from 'docxtemplater-image-module-free'
 
-/**
- * Build the flat data object that docxtemplater uses to fill placeholders.
- */
+/** Convert base64 data URL to Uint8Array */
+function base64ToUint8Array(dataUrl) {
+  const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+/** Create a gray placeholder image (1-inch photo, 295x413px) as PNG Uint8Array */
+function createPhotoPlaceholder() {
+  const W = 295, H = 413
+  const canvas = document.createElement('canvas')
+  canvas.width = W; canvas.height = H
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#E8E8E8'
+  ctx.fillRect(0, 0, W, H)
+  ctx.fillStyle = '#AAAAAA'
+  ctx.font = 'bold 22px sans-serif'
+  ctx.textAlign = 'center'
+  ctx.fillText('证件照', W / 2, H / 2 - 10)
+  ctx.font = '16px sans-serif'
+  ctx.fillText('Photo', W / 2, H / 2 + 18)
+  const dataUrl = canvas.toDataURL('image/png')
+  return base64ToUint8Array(dataUrl)
+}
+
 export function buildTemplateData(store) {
   const { basic, education, experiences, awards, skills } = store
-
   return {
-    // Basic
     name: basic.name,
     phone: basic.phone,
     email: basic.email,
@@ -17,8 +39,8 @@ export function buildTemplateData(store) {
     birthdate: basic.birthdate,
     expectedPosition: basic.expectedPosition,
     portfolio: basic.portfolio,
+    politicalStatus: basic.politicalStatus || '共青团员',
 
-    // Education
     school: education.school,
     major: education.major,
     degree: education.degree,
@@ -26,7 +48,6 @@ export function buildTemplateData(store) {
     gpa: education.gpa,
     rank: education.rank,
 
-    // Experiences — array for docxtemplater loop {#experiences}…{/experiences}
     experiences: experiences.map((e) => ({
       name: e.name,
       organization: e.organization,
@@ -34,7 +55,6 @@ export function buildTemplateData(store) {
       bulletsText: e.bullets.filter(Boolean).map((b) => `• ${b}`).join('\n'),
     })),
 
-    // Awards — array for docxtemplater loop {#awards}…{/awards}
     awards: awards.map((a) => ({
       name: a.name,
       date: a.date,
@@ -43,7 +63,6 @@ export function buildTemplateData(store) {
       description: a.description,
     })),
 
-    // Skills
     languages: skills.languages,
     computerSkills: skills.computerSkills,
     hobbies: skills.hobbies,
@@ -51,10 +70,6 @@ export function buildTemplateData(store) {
   }
 }
 
-/**
- * Fetch the .docx template, fill placeholders, and trigger browser download.
- * This function runs in the browser only.
- */
 export async function generateAndDownload(store) {
   const base = import.meta.env.BASE_URL
   const templateMap = {
@@ -66,16 +81,32 @@ export async function generateAndDownload(store) {
 
   const response = await fetch(url)
   if (!response.ok) throw new Error(`Failed to fetch template: ${url}`)
-
   const arrayBuffer = await response.arrayBuffer()
   const zip = new PizZip(arrayBuffer)
 
+  // Prepare photo data
+  const photoData = store.basic.photoDataUrl
+    ? base64ToUint8Array(store.basic.photoDataUrl)
+    : createPhotoPlaceholder()
+
+  // Image module: {%photo} → 一寸照片 (25mm × 35mm at 96dpi ≈ 94×132px display)
+  const imageModule = new ImageModule({
+    centered: true,
+    fileType: 'docx',
+    getImage: (tagValue) => tagValue,
+    getSize: () => [94, 132],
+  })
+
   const doc = new Docxtemplater(zip, {
+    modules: [imageModule],
     paragraphLoop: true,
     linebreaks: true,
   })
 
-  const data = buildTemplateData(store)
+  const data = {
+    ...buildTemplateData(store),
+    photo: photoData,
+  }
   doc.render(data)
 
   const out = doc.getZip().generate({

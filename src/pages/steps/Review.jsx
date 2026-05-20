@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useResumeStore } from '@/store/resumeStore'
 import ProgressBar from '@/components/ProgressBar'
 import { generateAndDownload } from '@/utils/docxGenerator'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const STEPS_LABELS = ['基本信息','教育背景','实习经历','获奖情况','技能特长','确认提交']
 
@@ -15,10 +15,7 @@ function Section({ title, editPath, children, warn }) {
           {warn && <span className="text-orange-400 text-xs">⚠️</span>}
           {title}
         </h3>
-        <button
-          onClick={() => navigate(editPath)}
-          className="text-xs text-[var(--accent)] hover:underline"
-        >
+        <button onClick={() => navigate(editPath)} className="text-xs text-[var(--accent)] hover:underline">
           编辑
         </button>
       </div>
@@ -37,42 +34,36 @@ function Row({ label, value }) {
   )
 }
 
-function MissingField({ label }) {
-  return (
-    <div className="text-xs text-orange-400">未填写：{label}</div>
-  )
-}
-
 export default function Review() {
   const navigate = useNavigate()
   const store = useResumeStore()
+  const setBasic = useResumeStore((s) => s.setBasic)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [photoImported, setPhotoImported] = useState(false)
+
+  // On mount: check localStorage for photo transferred from photo tool
+  useEffect(() => {
+    const pending = localStorage.getItem('resume-photo-pending')
+    if (pending) {
+      setBasic({ photoDataUrl: pending })
+      localStorage.removeItem('resume-photo-pending')
+      setPhotoImported(true)
+      setTimeout(() => setPhotoImported(false), 3000)
+    }
+  }, [])
 
   const b = store.basic
   const e = store.education
-  const basicMissing = [
-    !b.name && '姓名',
-    !b.phone && '手机号',
-    !b.email && '邮箱',
-  ].filter(Boolean)
-  const eduMissing = [
-    !e.school && '学校',
-    !e.major && '专业',
-  ].filter(Boolean)
+  const basicMissing = [!b.name && '姓名', !b.phone && '手机号', !b.email && '邮箱'].filter(Boolean)
+  const eduMissing = [!e.school && '学校', !e.major && '专业'].filter(Boolean)
   const canGenerate = basicMissing.length === 0 && eduMissing.length === 0
 
   const handleGenerate = async () => {
-    setLoading(true)
-    setError('')
-    try {
-      await generateAndDownload(store)
-    } catch (err) {
-      setError('生成失败：' + (err.message || '请检查网络或重试'))
-      console.error(err)
-    } finally {
-      setLoading(false)
-    }
+    setLoading(true); setError('')
+    try { await generateAndDownload(store) }
+    catch (err) { setError('生成失败：' + (err.message || '请检查网络或重试')); console.error(err) }
+    finally { setLoading(false) }
   }
 
   const photoToolUrl = `${import.meta.env.BASE_URL}photo-tool.html`
@@ -87,38 +78,75 @@ export default function Review() {
           <p className="text-sm text-gray-400 mt-1">检查无误后，点击下方按钮生成简历</p>
         </div>
 
-        {/* validation banner */}
+        {/* Validation banner */}
         {!canGenerate && (
           <div className="bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3">
             <p className="text-sm font-medium text-orange-700 mb-1">以下必填项还未填写，请返回补充：</p>
-            {basicMissing.map(f => (
-              <div key={f} className="text-xs text-orange-500 flex items-center gap-1">
-                <span>·</span> 基本信息 → {f}
-              </div>
-            ))}
-            {eduMissing.map(f => (
-              <div key={f} className="text-xs text-orange-500 flex items-center gap-1">
-                <span>·</span> 教育背景 → {f}
-              </div>
-            ))}
+            {basicMissing.map(f => <div key={f} className="text-xs text-orange-500">· 基本信息 → {f}</div>)}
+            {eduMissing.map(f => <div key={f} className="text-xs text-orange-500">· 教育背景 → {f}</div>)}
           </div>
         )}
 
+        {/* Photo import success */}
+        {photoImported && (
+          <div className="bg-green-50 border border-green-200 rounded-2xl px-4 py-2 text-sm text-green-700">
+            ✅ 证件照已成功导入简历！
+          </div>
+        )}
+
+        {/* Basic info + photo */}
         <Section title="基本信息" editPath="/step/basic" warn={basicMissing.length > 0}>
-          <div className="space-y-1">
-            {basicMissing.map(f => <MissingField key={f} label={f} />)}
-            <Row label="姓名" value={b.name} />
-            <Row label="手机" value={b.phone} />
-            <Row label="邮箱" value={b.email} />
-            <Row label="城市" value={b.city} />
-            <Row label="意向岗位" value={b.expectedPosition} />
-            <Row label="个人主页" value={b.portfolio} />
+          <div className="flex gap-4">
+            <div className="flex-1 space-y-1">
+              {basicMissing.map(f => <div key={f} className="text-xs text-orange-400">未填写：{f}</div>)}
+              <Row label="姓名" value={b.name} />
+              <Row label="手机" value={b.phone} />
+              <Row label="邮箱" value={b.email} />
+              <Row label="城市" value={b.city} />
+              <Row label="出生年月" value={b.birthdate} />
+              <Row label="政治面貌" value={b.politicalStatus} />
+              <Row label="意向岗位" value={b.expectedPosition} />
+            </div>
+            {/* Photo preview */}
+            <div className="flex-shrink-0 flex flex-col items-center gap-2">
+              {b.photoDataUrl
+                ? (
+                  <div className="relative group">
+                    <img
+                      src={b.photoDataUrl}
+                      alt="证件照"
+                      className="w-16 h-[90px] object-cover rounded-lg border border-gray-200 shadow-sm"
+                    />
+                    <button
+                      onClick={() => setBasic({ photoDataUrl: '' })}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-white border border-gray-200
+                        rounded-full text-gray-400 hover:text-red-400 text-xs leading-none
+                        opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="移除照片"
+                    >×</button>
+                  </div>
+                )
+                : (
+                  <div className="w-16 h-[90px] bg-gray-100 rounded-lg border-2 border-dashed border-gray-200
+                    flex flex-col items-center justify-center text-gray-300 gap-1">
+                    <span className="text-xl">🪪</span>
+                    <span className="text-[10px] leading-tight text-center">一寸照</span>
+                  </div>
+                )
+              }
+              <button
+                onClick={() => window.open(photoToolUrl, '_blank')}
+                className="text-[10px] text-[var(--accent)] hover:underline whitespace-nowrap"
+              >
+                {b.photoDataUrl ? '重新处理' : '去处理 →'}
+              </button>
+            </div>
           </div>
         </Section>
 
         <Section title="教育背景" editPath="/step/education" warn={eduMissing.length > 0}>
           <div className="space-y-1">
-            {eduMissing.map(f => <MissingField key={f} label={f} />)}
+            {eduMissing.map(f => <div key={f} className="text-xs text-orange-400">未填写：{f}</div>)}
             <Row label="学校" value={e.school} />
             <Row label="专业" value={e.major} />
             <Row label="学历" value={e.degree} />
@@ -159,7 +187,7 @@ export default function Review() {
 
         <Section title="技能特长" editPath="/step/skills">
           <div className="space-y-1">
-            {!store.skills.languages && !store.skills.computerSkills && !store.skills.hobbies && !store.skills.selfIntro
+            {!store.skills.languages && !store.skills.computerSkills
               ? <div className="text-xs text-gray-400">暂未填写，可返回补充</div>
               : <>
                   <Row label="语言" value={store.skills.languages} />
@@ -177,16 +205,24 @@ export default function Review() {
         <div className="p-4 rounded-2xl bg-[var(--accent-soft)] border border-pink-100 flex items-center gap-3">
           <span className="text-2xl">🪪</span>
           <div className="flex-1">
-            <div className="text-sm font-medium text-gray-800">还需要处理证件照？</div>
-            <div className="text-xs text-gray-500 mt-0.5">一键智能抠图 + 证件照裁剪工具</div>
+            <div className="text-sm font-medium text-gray-800">
+              {b.photoDataUrl ? '证件照已就绪 ✓' : '还没有处理证件照？'}
+            </div>
+            <div className="text-xs text-gray-500 mt-0.5">
+              {b.photoDataUrl
+                ? '照片将自动嵌入简历右上角'
+                : '用证件照工具处理后，点「发送到简历」即可自动回填'}
+            </div>
           </div>
-          <button
-            onClick={() => window.open(photoToolUrl, '_blank')}
-            className="text-xs px-3 py-1.5 bg-white border border-pink-200 rounded-lg
-              text-[var(--accent)] font-medium hover:bg-pink-50 transition-colors whitespace-nowrap"
-          >
-            去处理 →
-          </button>
+          {!b.photoDataUrl && (
+            <button
+              onClick={() => window.open(photoToolUrl, '_blank')}
+              className="text-xs px-3 py-1.5 bg-white border border-pink-200 rounded-lg
+                text-[var(--accent)] font-medium hover:bg-pink-50 transition-colors whitespace-nowrap"
+            >
+              去处理 →
+            </button>
+          )}
         </div>
 
         {error && <p className="text-red-400 text-sm text-center px-2">{error}</p>}
@@ -194,10 +230,7 @@ export default function Review() {
 
       {/* Fixed bottom CTA */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-6 py-4 flex gap-3">
-        <button
-          onClick={() => navigate('/step/skills')}
-          className="text-sm text-gray-400 hover:text-gray-700"
-        >
+        <button onClick={() => navigate('/step/skills')} className="text-sm text-gray-400 hover:text-gray-700">
           ← 返回
         </button>
         <button

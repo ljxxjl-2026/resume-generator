@@ -5,6 +5,8 @@ const initialState = {
   basic: {
     name: '', phone: '', email: '', city: '',
     birthdate: '', expectedPosition: '', portfolio: '',
+    politicalStatus: '共青团员',
+    photoDataUrl: '',           // base64 data URL from photo tool
   },
   education: {
     school: '', major: '', degree: '本科',
