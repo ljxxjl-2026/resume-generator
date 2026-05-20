@@ -61,20 +61,6 @@ export default function BasicInfo() {
         placeholder="（选填）粘贴链接"
       />
 
-      {/* Photo tool shortcut */}
-      <div className="mt-2 p-4 rounded-xl bg-[var(--accent-soft)] border border-pink-100 flex items-center gap-3">
-        <span className="text-2xl">🪪</span>
-        <div className="flex-1">
-          <div className="text-sm font-medium text-gray-800">需要处理证件照？</div>
-          <div className="text-xs text-gray-500 mt-0.5">用我们的裁剪工具快速搞定</div>
-        </div>
-        <button
-          onClick={() => window.open('about:blank', '_blank')}
-          className="text-xs px-3 py-1.5 bg-white border border-pink-200 rounded-lg text-[var(--accent)] font-medium hover:bg-pink-50 transition-colors"
-        >
-          去裁剪 →
-        </button>
-      </div>
     </StepCard>
   )
 }

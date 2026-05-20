@@ -56,10 +56,11 @@ export function buildTemplateData(store) {
  * This function runs in the browser only.
  */
 export async function generateAndDownload(store) {
+  const base = import.meta.env.BASE_URL
   const templateMap = {
-    'job-general':    '/templates/job-general.docx',
-    'club-apply':     '/templates/club-apply.docx',
-    'postgrad-apply': '/templates/postgrad-apply.docx',
+    'job-general':    `${base}templates/job-general.docx`,
+    'club-apply':     `${base}templates/club-apply.docx`,
+    'postgrad-apply': `${base}templates/postgrad-apply.docx`,
   }
   const url = templateMap[store.templateId] ?? templateMap['job-general']
 
