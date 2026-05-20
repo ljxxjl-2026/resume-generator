@@ -10,7 +10,7 @@ import Review from '@/pages/steps/Review'
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/resume-generator">
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/template" element={<TemplatePicker />} />
