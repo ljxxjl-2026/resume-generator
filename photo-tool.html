@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>证件照裁剪工具</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f5f5; color: #333; min-height: 100vh; }
+header { background: #fff; border-bottom: 1px solid #e0e0e0; padding: 12px 24px; display: flex; align-items: center; gap: 10px; }
+header h1 { font-size: 18px; font-weight: 600; }
+.main { display: flex; gap: 20px; padding: 20px 24px; max-width: 1100px; margin: 0 auto; }
+
+.left-panel { flex: 1; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.upload-zone { border: 2px dashed #ccc; border-radius: 10px; background: #fff; padding: 32px; text-align: center; cursor: pointer; transition: border-color 0.2s; }
+.upload-zone:hover, .upload-zone.drag-over { border-color: #4a90e2; background: #f0f6ff; }
+.upload-zone p { color: #888; font-size: 14px; margin-top: 8px; }
+.upload-zone input[type=file] { display: none; }
+.canvas-wrapper { position: relative; background: #fff; border-radius: 10px; overflow: hidden; display: none; }
+#sourceCanvas { display: block; max-width: 100%; }
+#cropOverlay { position: absolute; top: 0; left: 0; pointer-events: all; }
+.canvas-topbar {
+  position: absolute; top: 8px; left: 8px; right: 8px;
+  display: flex; align-items: center; gap: 6px; z-index: 10; pointer-events: none;
+}
+.canvas-topbar > * { pointer-events: all; }
+.canvas-badge {
+  padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
+  background: rgba(0,0,0,0.55); color: #fff; backdrop-filter: blur(4px);
+  display: flex; align-items: center; gap: 4px;
+}
+.canvas-badge.green { background: rgba(52,199,89,0.85); }
+.canvas-badge.yellow { background: rgba(255,159,10,0.85); }
+.spacer { flex: 1; }
+.change-btn { padding: 3px 10px; background: rgba(0,0,0,0.45); color: #fff; border: none; border-radius: 5px; font-size: 12px; cursor: pointer; backdrop-filter: blur(4px); }
+.change-btn:hover { background: rgba(0,0,0,0.65); }
+
+.right-panel { width: 260px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; }
+.card { background: #fff; border-radius: 10px; padding: 16px; }
+.card h3 { font-size: 12px; font-weight: 600; color: #aaa; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+.size-list { display: flex; flex-direction: column; gap: 6px; }
+.size-item { padding: 8px 12px; border: 1.5px solid #e0e0e0; border-radius: 8px; cursor: pointer; font-size: 14px; display: flex; justify-content: space-between; align-items: center; transition: all 0.15s; }
+.size-item:hover { border-color: #4a90e2; }
+.size-item.active { border-color: #4a90e2; background: #f0f6ff; font-weight: 600; }
+.size-item span { color: #aaa; font-size: 12px; font-weight: 400; }
+.color-list { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.color-swatch { width: 36px; height: 36px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; transition: all 0.15s; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+.color-swatch:hover { transform: scale(1.1); }
+.color-swatch.active { border-color: #333; transform: scale(1.1); }
+.btn-cutout { width: 100%; padding: 7px; font-size: 13px; font-weight: 600; margin-top: 4px; background: #fff; border: 1.5px solid #4a90e2; border-radius: 7px; color: #4a90e2; cursor: pointer; transition: all 0.2s; }
+.btn-cutout:hover { background: #f0f6ff; }
+.btn-cutout.running { border-color: #ccc; color: #888; cursor: not-allowed; background: #fafafa; }
+.btn-cutout.done { background: #4a90e2; color: #fff; border-color: #4a90e2; }
+.btn-cutout:disabled { border-color: #ccc; color: #ccc; cursor: not-allowed; }
+.cutout-hint { font-size: 11px; color: #aaa; margin-top: 6px; line-height: 1.5; }
+.preview-box { background: #e8e8e8; border-radius: 8px; overflow: hidden; display: flex; align-items: center; justify-content: center; min-height: 120px; }
+#previewCanvas { display: block; max-width: 100%; max-height: 180px; border-radius: 2px; }
+.preview-placeholder { color: #bbb; font-size: 13px; }
+.btn-group { display: flex; gap: 8px; }
+.btn-generate { flex: 1; padding: 12px; background: #4a90e2; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+.btn-generate:hover { background: #357abd; }
+.btn-generate:disabled { background: #ccc; cursor: not-allowed; }
+.btn-sheet { padding: 12px 14px; background: #fff; color: #4a90e2; border: 1.5px solid #4a90e2; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn-sheet:hover { background: #f0f6ff; }
+.btn-sheet:disabled { color: #ccc; border-color: #ccc; cursor: not-allowed; background: #fff; }
+.hint { font-size: 12px; color: #aaa; text-align: center; line-height: 1.6; }
+</style>
+</head>
+<body>
+<header>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a90e2" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+  <h1>证件照裁剪工具</h1>
+</header>
+<div class="main">
+  <div class="left-panel">
+    <div class="upload-zone" id="uploadZone">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <p>点击或拖拽照片到此处</p>
+      <p style="font-size:12px">支持 JPG、PNG、WEBP</p>
+      <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp">
+    </div>
+    <div class="canvas-wrapper" id="canvasWrapper">
+      <canvas id="sourceCanvas"></canvas>
+      <canvas id="cropOverlay"></canvas>
+      <div class="canvas-topbar">
+        <div class="canvas-badge" id="faceBadge" style="display:none"></div>
+        <div class="spacer"></div>
+        <button class="change-btn" id="changePhotoBtn">换图</button>
+      </div>
+    </div>
+  </div>
+  <div class="right-panel">
+    <div class="card">
+      <h3>证件照尺寸</h3>
+      <div class="size-list" id="sizeList"></div>
+    </div>
+    <div class="card">
+      <h3>背景颜色</h3>
+      <div class="color-list" id="colorList"></div>
+      <button class="btn-cutout" id="btnCutout" disabled>✂ 一键智能抠图</button>
+      <div class="cutout-hint" id="cutoutHint">换背景色需先抠图；首次点击会下载 AI 模型（约 4 MB）</div>
+    </div>
+    <div class="card">
+      <h3>效果预览</h3>
+      <div class="preview-box">
+        <span class="preview-placeholder" id="previewPlaceholder">上传照片后显示</span>
+        <canvas id="previewCanvas" style="display:none"></canvas>
+      </div>
+    </div>
+    <div class="btn-group">
+      <button class="btn-generate" id="btnGenerate" disabled>生成并下载</button>
+      <button class="btn-sheet" id="btnSheet" disabled>排版 A4</button>
+    </div>
+    <p class="hint">拖动框体移位，拖角点缩放（锁比例）</p>
+  </div>
+</div>
+
+<script>
+// ─── 数据 ──────────────────────────────────────────────────────────────────────
+const SIZES = [
+  { name: '一寸',   desc: '25×35 mm', w: 295, h: 413 },
+  { name: '二寸',   desc: '35×49 mm', w: 413, h: 579 },
+  { name: '小一寸', desc: '22×32 mm', w: 260, h: 378 },
+  { name: '小二寸', desc: '33×48 mm', w: 390, h: 567 },
+  { name: '护照',   desc: '33×48 mm', w: 390, h: 567 },
+  { name: '签证',   desc: '50×50 mm', w: 590, h: 590 },
+]
+const REF_H = 579
+const BG_COLORS = [
+  { name: '白色', value: '#ffffff' },
+  { name: '蓝色', value: '#4a7bc4' },
+  { name: '红色', value: '#c94a4a' },
+  { name: '灰色', value: '#bfc0c2' },
+]
+
+// ─── 状态 ──────────────────────────────────────────────────────────────────────
+let img = null, displayScale = 1
+let cropBox = { x: 0, y: 0, w: 0, h: 0 }
+let selectedSizeIdx = 0, bgColor = BG_COLORS[1].value
+let cutoutCanvas = null, isCutout = false
+let dragMode = null, dragStart = {}
+let segInstance = null, segScriptLoaded = false
+
+// ─── DOM ───────────────────────────────────────────────────────────────────────
+const uploadZone = document.getElementById('uploadZone')
+const fileInput = document.getElementById('fileInput')
+const canvasWrapper = document.getElementById('canvasWrapper')
+const sourceCanvas = document.getElementById('sourceCanvas')
+const cropOverlay = document.getElementById('cropOverlay')
+const changePhotoBtn = document.getElementById('changePhotoBtn')
+const faceBadge = document.getElementById('faceBadge')
+const sizeList = document.getElementById('sizeList')
+const colorList = document.getElementById('colorList')
+const previewCanvas = document.getElementById('previewCanvas')
+const previewPlaceholder = document.getElementById('previewPlaceholder')
+const btnGenerate = document.getElementById('btnGenerate')
+const btnSheet = document.getElementById('btnSheet')
+const btnCutout = document.getElementById('btnCutout')
+const cutoutHint = document.getElementById('cutoutHint')
+
+// ─── 初始化 ────────────────────────────────────────────────────────────────────
+function initSizeList() {
+  SIZES.forEach((s, i) => {
+    const el = document.createElement('div')
+    el.className = 'size-item' + (i === 0 ? ' active' : '')
+    el.innerHTML = `${s.name} <span>${s.desc}</span>`
+    el.addEventListener('click', () => {
+      document.querySelectorAll('.size-item').forEach(e => e.classList.remove('active'))
+      el.classList.add('active'); selectedSizeIdx = i
+      if (img) { resetCutout(); adjustCropBoxRatio(); drawCropOverlay(); renderPreview() }
+    })
+    sizeList.appendChild(el)
+  })
+}
+function initColorList() {
+  BG_COLORS.forEach((c, i) => {
+    const el = document.createElement('div')
+    el.className = 'color-swatch' + (i === 1 ? ' active' : '')
+    el.style.background = c.value; el.title = c.name
+    el.addEventListener('click', () => {
+      document.querySelectorAll('.color-swatch').forEach(e => e.classList.remove('active'))
+      el.classList.add('active'); bgColor = c.value
+      if (img) renderPreview()
+    })
+    colorList.appendChild(el)
+  })
+}
+initSizeList(); initColorList()
+
+// ─── 上传 ──────────────────────────────────────────────────────────────────────
+uploadZone.addEventListener('click', () => fileInput.click())
+fileInput.addEventListener('change', e => { if (e.target.files[0]) loadImageFile(e.target.files[0]) })
+changePhotoBtn.addEventListener('click', () => fileInput.click())
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over') })
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'))
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault(); uploadZone.classList.remove('drag-over')
+  const f = e.dataTransfer.files[0]
+  if (f && f.type.startsWith('image/')) loadImageFile(f)
+})
+function loadImageFile(file) {
+  const url = URL.createObjectURL(file)
+  const image = new Image()
+  image.onload = () => {
+    URL.revokeObjectURL(url); img = image
+    cropBox = { x:0,y:0,w:0,h:0 }; resetCutout(); setupCanvas()
+    uploadZone.style.display = 'none'; canvasWrapper.style.display = 'block'
+    btnGenerate.disabled = false; btnSheet.disabled = false; btnCutout.disabled = false
+    previewPlaceholder.style.display = 'none'; previewCanvas.style.display = 'block'
+    autoDetectFaceAndCrop()
+  }
+  image.onerror = () => { URL.revokeObjectURL(url); alert('图片加载失败') }
+  image.src = url
+}
+
+// ─── 画布 ──────────────────────────────────────────────────────────────────────
+function setupCanvas() {
+  const maxW = Math.max(300, (canvasWrapper.parentElement.offsetWidth || 640) - 4)
+  const maxH = Math.round(window.innerHeight * 0.65)
+  const scale = Math.min(1, maxW / img.width, maxH / img.height)
+  const dw = Math.round(img.width * scale), dh = Math.round(img.height * scale)
+  displayScale = scale
+  sourceCanvas.width = dw; sourceCanvas.height = dh
+  cropOverlay.width = dw; cropOverlay.height = dh
+  cropOverlay.style.width = dw + 'px'; cropOverlay.style.height = dh + 'px'
+  sourceCanvas.getContext('2d').drawImage(img, 0, 0, dw, dh)
+}
+
+// ─── 人脸检测 ──────────────────────────────────────────────────────────────────
+// 使用 Chrome 原生 FaceDetector（零下载）+ 眼睛关键点精确定位
+// 标准证件照构图：双眼中心位于照片高度 38–40% 处
+
+async function autoDetectFaceAndCrop() {
+  showBadge('🔍 检测人脸中…', '')
+  let detected = false
+
+  if (window.FaceDetector) {
+    try {
+      const detector = new FaceDetector({ maxDetectedFaces: 1, fastMode: false })
+      // 在 display 尺寸的 canvas 上检测，坐标直接对应 cropOverlay 坐标系
+      const faces = await detector.detect(sourceCanvas)
+      if (faces.length > 0) {
+        const face = faces[0]
+        const eyeLandmarks = (face.landmarks || []).filter(l => l.type === 'eye')
+        if (eyeLandmarks.length >= 2) {
+          cropFromEyes(face.boundingBox, eyeLandmarks)
+          showBadge('✓ 眼睛定位，可手动微调', 'green')
+        } else {
+          cropFromBox(face.boundingBox)
+          showBadge('✓ 已识别人脸，可手动微调', 'green')
+        }
+        detected = true
+      }
+    } catch (e) { console.warn('FaceDetector:', e) }
+  }
+
+  if (!detected) {
+    adjustCropBoxRatio()
+    showBadge('未检测到人脸，请手动调整', 'yellow')
+  }
+
+  drawCropOverlay(); renderPreview()
+  setTimeout(() => { faceBadge.style.display = 'none' }, 3500)
+}
+
+function showBadge(text, cls) {
+  faceBadge.textContent = text
+  faceBadge.className = 'canvas-badge' + (cls ? ' ' + cls : '')
+  faceBadge.style.display = 'flex'
+}
+
+// 使用双眼中心精确定位（最准确）
+// 国标：双眼中心连线位于照片上边缘往下约 38–40%
+function cropFromEyes(box, eyeLandmarks) {
+  const ratio = SIZES[selectedSizeIdx].w / SIZES[selectedSizeIdx].h
+  const cw = cropOverlay.width, ch = cropOverlay.height
+
+  // 计算双眼中心点（display 坐标）
+  const pts = eyeLandmarks.flatMap(l => [...l.locations])
+  const eyeCX = pts.reduce((s, p) => s + p.x, 0) / pts.length
+  const eyeCY = pts.reduce((s, p) => s + p.y, 0) / pts.length
+
+  // 眼间距估算脸宽，以脸宽反推合适的框高
+  // 两眼 x 坐标差 → 眼间距，通常约为脸宽的 45%
+  const xs = pts.map(p => p.x)
+  const eyeSpan = Math.max(...xs) - Math.min(...xs)      // 两眼间距（像素）
+  const faceW = eyeSpan / 0.45                            // 估算脸宽
+  let h = (faceW / ratio) * 1.9                           // 框高 = 脸高比例放大
+  let w = h * ratio
+
+  if (w > cw * 0.95) { w = cw * 0.95; h = w / ratio }
+  if (h > ch * 0.95) { h = ch * 0.95; w = h * ratio }
+  w = Math.max(60, w); h = Math.max(80, h)
+
+  // 眼睛 Y 定位到框高的 39%（国标上沿：眼在高度约 38–42%）
+  let x = eyeCX - w / 2
+  let y = eyeCY - h * 0.39
+  x = Math.max(0, Math.min(x, cw - w))
+  y = Math.max(0, Math.min(y, ch - h))
+  cropBox = { x, y, w, h }
+}
+
+// 仅有 bounding box 时的后备定位
+function cropFromBox(box) {
+  const ratio = SIZES[selectedSizeIdx].w / SIZES[selectedSizeIdx].h
+  const cw = cropOverlay.width, ch = cropOverlay.height
+  const fH = box.height
+  let h = fH / 0.55, w = h * ratio
+  if (w > cw * 0.95) { w = cw * 0.95; h = w / ratio }
+  if (h > ch * 0.95) { h = ch * 0.95; w = h * ratio }
+  w = Math.max(60, w); h = Math.max(80, h)
+  let x = box.x + box.width / 2 - w / 2
+  let y = box.y - h * 0.22
+  x = Math.max(0, Math.min(x, cw - w))
+  y = Math.max(0, Math.min(y, ch - h))
+  cropBox = { x, y, w, h }
+}
+
+// ─── 裁剪框比例 ────────────────────────────────────────────────────────────────
+function adjustCropBoxRatio() {
+  const size = SIZES[selectedSizeIdx]
+  const ratio = size.w / size.h
+  const cw = cropOverlay.width, ch = cropOverlay.height
+  let h = (size.h / REF_H) * ch * 0.82, w = h * ratio
+  if (w > cw * 0.88) { w = cw * 0.88; h = w / ratio }
+  if (h > ch * 0.88) { h = ch * 0.88; w = h * ratio }
+  w = Math.max(40, w); h = Math.max(50, h)
+  const cx = cropBox.w ? cropBox.x + cropBox.w / 2 : cw / 2
+  const cy = cropBox.h ? cropBox.y + cropBox.h / 2 : ch / 2
+  cropBox = {
+    x: Math.max(0, Math.min(cx - w / 2, cw - w)),
+    y: Math.max(0, Math.min(cy - h / 2, ch - h)),
+    w, h
+  }
+}
+
+// ─── 裁剪叠加层 ────────────────────────────────────────────────────────────────
+const HANDLE_R = 6
+function getHandles() {
+  const { x, y, w, h } = cropBox
+  return { nw:{x,y}, n:{x:x+w/2,y}, ne:{x:x+w,y}, e:{x:x+w,y:y+h/2}, se:{x:x+w,y:y+h}, s:{x:x+w/2,y:y+h}, sw:{x,y:y+h}, w:{x,y:y+h/2} }
+}
+function drawCropOverlay() {
+  const ctx = cropOverlay.getContext('2d')
+  const { x, y, w, h } = cropBox
+  const cw = cropOverlay.width, ch = cropOverlay.height
+  ctx.clearRect(0, 0, cw, ch)
+  ctx.fillStyle = 'rgba(0,0,0,0.48)'; ctx.fillRect(0, 0, cw, ch)
+  ctx.clearRect(x, y, w, h)
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 1.5; ctx.strokeRect(x, y, w, h)
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 0.8; ctx.beginPath()
+  for (let i = 1; i <= 2; i++) {
+    ctx.moveTo(x+w*i/3,y); ctx.lineTo(x+w*i/3,y+h)
+    ctx.moveTo(x,y+h*i/3); ctx.lineTo(x+w,y+h*i/3)
+  }
+  ctx.stroke()
+  for (const p of Object.values(getHandles())) {
+    ctx.beginPath(); ctx.arc(p.x, p.y, HANDLE_R, 0, Math.PI*2)
+    ctx.fillStyle = '#fff'; ctx.fill()
+    ctx.strokeStyle = '#4a90e2'; ctx.lineWidth = 1.5; ctx.stroke()
+  }
+}
+
+// ─── 拖拽 ──────────────────────────────────────────────────────────────────────
+const CURSORS = { nw:'nw-resize',n:'n-resize',ne:'ne-resize',e:'e-resize',se:'se-resize',s:'s-resize',sw:'sw-resize',w:'w-resize',move:'move' }
+function hitHandle(mx,my) { for(const[id,p]of Object.entries(getHandles())) if(Math.hypot(mx-p.x,my-p.y)<HANDLE_R+4) return id; return null }
+function inBox(mx,my) { const{x,y,w,h}=cropBox; return mx>=x&&mx<=x+w&&my>=y&&my<=y+h }
+cropOverlay.addEventListener('mousemove',e=>{
+  if(!img||dragMode)return
+  const h=hitHandle(e.offsetX,e.offsetY)
+  cropOverlay.style.cursor=h?CURSORS[h]:(inBox(e.offsetX,e.offsetY)?'move':'crosshair')
+})
+cropOverlay.addEventListener('mousedown',e=>{
+  if(!img)return
+  const handle=hitHandle(e.offsetX,e.offsetY)
+  dragMode=handle||(inBox(e.offsetX,e.offsetY)?'move':null)
+  if(dragMode){dragStart={mx:e.offsetX,my:e.offsetY,bx:cropBox.x,by:cropBox.y,bw:cropBox.w,bh:cropBox.h};e.preventDefault()}
+})
+window.addEventListener('mouseup',()=>{dragMode=null})
+window.addEventListener('mousemove',e=>{
+  if(!dragMode||!img)return
+  const r=cropOverlay.getBoundingClientRect()
+  doDrag((e.clientX-r.left)*(cropOverlay.width/r.width),(e.clientY-r.top)*(cropOverlay.height/r.height))
+})
+function doDrag(mx,my){
+  const{bx,by,bw,bh}=dragStart,cw=cropOverlay.width,ch=cropOverlay.height
+  const ratio=SIZES[selectedSizeIdx].w/SIZES[selectedSizeIdx].h,MIN=40
+  if(dragMode==='move'){
+    cropBox.x=Math.max(0,Math.min(bx+mx-dragStart.mx,cw-bw))
+    cropBox.y=Math.max(0,Math.min(by+my-dragStart.my,ch-bh))
+  } else {
+    let x=bx,y=by,w=bw,h=bh
+    switch(dragMode){
+      case'se':w=Math.max(MIN,mx-bx);h=w/ratio;break
+      case'sw':w=Math.max(MIN,bx+bw-mx);h=w/ratio;x=bx+bw-w;break
+      case'ne':w=Math.max(MIN,mx-bx);h=w/ratio;y=by+bh-h;break
+      case'nw':w=Math.max(MIN,bx+bw-mx);h=w/ratio;x=bx+bw-w;y=by+bh-h;break
+      case'e':w=Math.max(MIN,mx-bx);h=w/ratio;y=by+(bh-h)/2;break
+      case'w':w=Math.max(MIN,bx+bw-mx);h=w/ratio;x=bx+bw-w;y=by+(bh-h)/2;break
+      case's':h=Math.max(MIN,my-by);w=h*ratio;x=bx+(bw-w)/2;break
+      case'n':h=Math.max(MIN,by+bh-my);w=h*ratio;x=bx+(bw-w)/2;y=by+bh-h;break
+    }
+    if(x<0)x=0;if(y<0)y=0
+    if(x+w>cw){w=cw-x;h=w/ratio}if(y+h>ch){h=ch-y;w=h*ratio}
+    cropBox={x,y,w,h}
+  }
+  resetCutout(); drawCropOverlay(); renderPreview()
+}
+
+// ─── 图像处理工具 ──────────────────────────────────────────────────────────────
+
+// 形态学膨胀：将前景 mask 向外扩张 r 像素，捕获被模型漏掉的细碎发丝
+function dilate(mask, w, h, r) {
+  const out = new Float32Array(w * h)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let max = 0
+      for (let dy = -r; dy <= r && max < 1; dy++) {
+        const ny = Math.max(0, Math.min(h-1, y+dy))
+        for (let dx = -r; dx <= r && max < 1; dx++) {
+          const v = mask[ny*w + Math.max(0, Math.min(w-1, x+dx))]
+          if (v > max) max = v
+        }
+      }
+      out[y*w+x] = max
+    }
+  }
+  return out
+}
+
+// 可分离高斯模糊：将硬边 mask 柔化为羽化过渡带
+function gaussianBlur(data, w, h, sigma) {
+  const kSize = (Math.ceil(sigma * 3.5) * 2 + 1) | 1
+  const half = (kSize - 1) >> 1
+  const kernel = new Float32Array(kSize)
+  const s2 = 2 * sigma * sigma; let sum = 0
+  for (let i = 0; i < kSize; i++) { const x=i-half; kernel[i]=Math.exp(-x*x/s2); sum+=kernel[i] }
+  for (let i = 0; i < kSize; i++) kernel[i] /= sum
+
+  const tmp = new Float32Array(w * h), out = new Float32Array(w * h)
+  // 水平
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      let v = 0
+      for (let k = 0; k < kSize; k++) v += data[y*w + Math.max(0,Math.min(w-1,x+k-half))] * kernel[k]
+      tmp[y*w+x] = v
+    }
+  // 垂直
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      let v = 0
+      for (let k = 0; k < kSize; k++) v += tmp[Math.max(0,Math.min(h-1,y+k-half))*w+x] * kernel[k]
+      out[y*w+x] = v
+    }
+  return out
+}
+
+// 颜色引导 matting：在过渡带（alpha 0.04–0.96）用原图颜色与背景/前景色样本
+// 用置信度加权将模糊 alpha 向"正确侧"推拉，消除毛边"光晕"
+// 同时从图片四角采集背景色样本（证件照四角几乎必为纯背景）
+function colorGuidedMatting(blurred, imgPx, w, h) {
+  const n = w * h
+  const bgColors = [], fgColors = []
+
+  // 四角固定采样（证件照背景均匀，四角最可靠）
+  const pad = Math.max(3, Math.min(6, Math.floor(Math.min(w, h) * 0.02)))
+  const corners = [[0, 0], [w - pad, 0], [0, h - pad], [w - pad, h - pad]]
+  for (const [cx, cy] of corners) {
+    for (let dy = 0; dy < pad; dy++) for (let dx = 0; dx < pad; dx++) {
+      const p = (Math.min(h-1, cy+dy) * w + Math.min(w-1, cx+dx)) * 4
+      bgColors.push(imgPx[p], imgPx[p+1], imgPx[p+2])
+    }
+  }
+
+  // Mask 引导采样
+  for (let i = 0; i < n; i++) {
+    const a = blurred[i], p = i * 4
+    if (a < 0.04 && bgColors.length < 600) bgColors.push(imgPx[p], imgPx[p+1], imgPx[p+2])
+    if (a > 0.96 && fgColors.length < 600) fgColors.push(imgPx[p], imgPx[p+1], imgPx[p+2])
+  }
+
+  const refined = new Float32Array(blurred)
+  if (bgColors.length < 9 || fgColors.length < 9) return refined
+
+  const bgStep = Math.max(3, Math.floor(bgColors.length / 180))
+  const fgStep = Math.max(3, Math.floor(fgColors.length / 180))
+
+  for (let i = 0; i < n; i++) {
+    const a = blurred[i]
+    if (a <= 0.04 || a >= 0.96) continue
+    const p = i * 4
+    const r = imgPx[p], g = imgPx[p+1], b = imgPx[p+2]
+
+    let minBg = 1e9, minFg = 1e9
+    for (let j = 0; j < bgColors.length; j += bgStep) {
+      const d = Math.abs(r-bgColors[j]) + Math.abs(g-bgColors[j+1]) + Math.abs(b-bgColors[j+2])
+      if (d < minBg) minBg = d
+    }
+    for (let j = 0; j < fgColors.length; j += fgStep) {
+      const d = Math.abs(r-fgColors[j]) + Math.abs(g-fgColors[j+1]) + Math.abs(b-fgColors[j+2])
+      if (d < minFg) minFg = d
+    }
+
+    if (minBg + minFg < 1) continue
+    // colorP: 0=背景色系, 1=前景色系
+    const colorP = minBg / (minBg + minFg)
+    // 置信度加权推拉：仅在颜色证据明确时修正，ambiguous 像素保持原羽化 alpha
+    const target = colorP > 0.5 ? 1.0 : 0.0
+    const confidence = Math.pow(Math.abs(colorP - 0.5) * 2, 1.5)  // 非线性，低置信度不动
+    refined[i] = a + (target - a) * confidence * 0.55
+  }
+  return refined
+}
+
+// 完整的 mask 精修管线：膨胀 → 模糊 → 颜色引导 → 写回 alpha
+function applyMaskWithRefinement(imgCvs, maskCvs, w, h) {
+  // 取原图像素
+  const tmpCvs = document.createElement('canvas')
+  tmpCvs.width = w; tmpCvs.height = h
+  const tmpCtx = tmpCvs.getContext('2d', { willReadFrequently: true })
+  tmpCtx.drawImage(imgCvs, 0, 0)
+  const imgData = tmpCtx.getImageData(0, 0, w, h)
+
+  // 取 mask 像素（缩放至输出尺寸）
+  const mCvs = document.createElement('canvas')
+  mCvs.width = w; mCvs.height = h
+  mCvs.getContext('2d').drawImage(maskCvs, 0, 0, w, h)
+  const mPx = mCvs.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data
+
+  const n = w * h
+  // 提取 mask 为浮点（MediaPipe: 白色=人像=255, 黑色=背景=0）
+  const maskF = new Float32Array(n)
+  for (let i = 0; i < n; i++) maskF[i] = mPx[i * 4] / 255
+
+  // 1. 膨胀 3px：将细发丝纳入前景
+  const dilated = dilate(maskF, w, h, 3)
+
+  // 2. 高斯模糊 σ=3.0：硬边→自然羽化过渡
+  const blurred = gaussianBlur(dilated, w, h, 3.0)
+
+  // 3. 颜色引导精修过渡带
+  const refined = colorGuidedMatting(blurred, imgData.data, w, h)
+
+  // 写回 alpha 通道
+  for (let i = 0; i < n; i++) {
+    imgData.data[i*4+3] = Math.round(Math.max(0, Math.min(1, refined[i])) * 255)
+  }
+
+  const out = document.createElement('canvas')
+  out.width = w; out.height = h
+  out.getContext('2d').putImageData(imgData, 0, 0)
+  return out
+}
+
+// ─── 抠图主流程 ────────────────────────────────────────────────────────────────
+function loadSegScript() {
+  if (segScriptLoaded) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script')
+    s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js'
+    s.crossOrigin = 'anonymous'
+    s.onload = () => { segScriptLoaded = true; resolve() }
+    s.onerror = () => reject(new Error('无法加载 MediaPipe 脚本，请检查网络'))
+    document.head.appendChild(s)
+  })
+}
+function initSeg() {
+  if (segInstance) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const seg = new SelfieSegmentation({
+      locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}`
+    })
+    seg.setOptions({ modelSelection: 1 })
+    seg.onResults(() => { segInstance = seg; resolve() })
+    const w = document.createElement('canvas'); w.width = 4; w.height = 4
+    seg.send({ image: w }).catch(reject)
+  })
+}
+function runSeg(canvas) {
+  return new Promise((resolve, reject) => {
+    segInstance.onResults(r => resolve(r.segmentationMask))
+    segInstance.send({ image: canvas }).catch(reject)
+  })
+}
+
+async function applyCutout() {
+  if (!img) return
+  btnCutout.disabled = true; btnCutout.classList.add('running')
+  btnCutout.textContent = '⏳ 加载模型…'
+  cutoutHint.textContent = '首次使用下载约 4 MB 模型，请稍候…'
+  try {
+    await loadSegScript()
+    btnCutout.textContent = '⏳ 初始化中…'
+    await initSeg()
+    btnCutout.textContent = '⏳ 分割中…'
+    cutoutHint.textContent = '正在识别人像边缘…'
+
+    const size = SIZES[selectedSizeIdx]
+    const ix=cropBox.x/displayScale, iy=cropBox.y/displayScale
+    const iw=cropBox.w/displayScale, ih=cropBox.h/displayScale
+    const cropCvs = document.createElement('canvas')
+    cropCvs.width = size.w; cropCvs.height = size.h
+    cropCvs.getContext('2d').drawImage(img, ix, iy, iw, ih, 0, 0, size.w, size.h)
+
+    const mask = await runSeg(cropCvs)
+
+    btnCutout.textContent = '⏳ 精修边缘…'
+    cutoutHint.textContent = '羽化发丝与衣领边缘…'
+
+    // 异步执行精修，避免阻塞 UI
+    await new Promise(r => setTimeout(r, 0))
+    cutoutCanvas = applyMaskWithRefinement(cropCvs, mask, size.w, size.h)
+    isCutout = true
+
+    btnCutout.classList.remove('running'); btnCutout.classList.add('done')
+    btnCutout.textContent = '✓ 抠图完成'
+    cutoutHint.textContent = '切换背景色立即生效；调整裁剪后请重新抠图'
+    renderPreview()
+  } catch (err) {
+    console.error(err)
+    btnCutout.classList.remove('running')
+    btnCutout.textContent = '✂ 一键智能抠图'
+    cutoutHint.textContent = '失败：' + (err.message || '未知错误')
+  } finally { btnCutout.disabled = false }
+}
+
+function resetCutout() {
+  if (!isCutout) return
+  isCutout = false; cutoutCanvas = null
+  btnCutout.classList.remove('done', 'running')
+  btnCutout.textContent = '✂ 一键智能抠图'
+  cutoutHint.textContent = '换背景色需先抠图；裁剪调整后需重新抠图'
+}
+
+btnCutout.addEventListener('click', applyCutout)
+
+// ─── 预览 ──────────────────────────────────────────────────────────────────────
+function renderPreview() {
+  if (!img) return
+  const size = SIZES[selectedSizeIdx], ratio = size.w/size.h
+  const maxH=180, maxW=228
+  let pw, ph
+  if (ratio>maxW/maxH){pw=maxW;ph=Math.round(maxW/ratio)}else{ph=maxH;pw=Math.round(maxH*ratio)}
+  previewCanvas.width=pw; previewCanvas.height=ph
+  const ctx=previewCanvas.getContext('2d')
+  ctx.fillStyle=bgColor; ctx.fillRect(0,0,pw,ph)
+  if (isCutout && cutoutCanvas) {
+    ctx.drawImage(cutoutCanvas, 0, 0, pw, ph)
+  } else {
+    ctx.drawImage(img, cropBox.x/displayScale, cropBox.y/displayScale,
+      cropBox.w/displayScale, cropBox.h/displayScale, 0, 0, pw, ph)
+  }
+}
+
+// ─── 生成输出 ──────────────────────────────────────────────────────────────────
+function buildOutput(size) {
+  const out = document.createElement('canvas')
+  out.width = size.w; out.height = size.h
+  const ctx = out.getContext('2d')
+  ctx.fillStyle = bgColor; ctx.fillRect(0, 0, size.w, size.h)
+  if (isCutout && cutoutCanvas) {
+    ctx.drawImage(cutoutCanvas, 0, 0, size.w, size.h)
+  } else {
+    ctx.drawImage(img, cropBox.x/displayScale, cropBox.y/displayScale,
+      cropBox.w/displayScale, cropBox.h/displayScale, 0, 0, size.w, size.h)
+  }
+  return out
+}
+function dl(canvas, name) {
+  canvas.toBlob(blob => {
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob); a.download = name; a.click()
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000)
+  }, 'image/jpeg', 0.95)
+}
+function generateSingle() { if (!img) return; const s=SIZES[selectedSizeIdx]; dl(buildOutput(s), `证件照_${s.name}.jpg`) }
+function generateSheet() {
+  if (!img) return
+  const size=SIZES[selectedSizeIdx],A4W=2480,A4H=3508,MARGIN=60,GAP=20
+  const cols=Math.floor((A4W-2*MARGIN+GAP)/(size.w+GAP))
+  const rows=Math.floor((A4H-2*MARGIN+GAP)/(size.h+GAP))
+  if(cols<1||rows<1){alert('尺寸过大，无法排版到 A4');return}
+  const single=buildOutput(size),sheet=document.createElement('canvas')
+  sheet.width=A4W;sheet.height=A4H
+  const ctx=sheet.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,A4W,A4H)
+  const tw=cols*size.w+(cols-1)*GAP,th=rows*size.h+(rows-1)*GAP
+  const sx=Math.round((A4W-tw)/2),sy=Math.round((A4H-th)/2)
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)ctx.drawImage(single,sx+c*(size.w+GAP),sy+r*(size.h+GAP))
+  dl(sheet,`证件照排版_${size.name}_${cols}x${rows}.jpg`)
+}
+btnGenerate.addEventListener('click', generateSingle)
+btnSheet.addEventListener('click', generateSheet)
+</script>
+</body>
+</html>
