@@ -708,29 +708,23 @@ function sendToResume() {
     reader.onload = () => {
       const dataUrl = reader.result
 
-      // ── 方案 A：通过 postMessage 推回父标签页（最可靠）──────────────
-      if (window.opener && !window.opener.closed) {
-        try {
-          window.opener.postMessage({ type: 'resume-photo', dataUrl }, '*')
-          btn.textContent = '✅ 已发送到简历！'
-          btn.style.background = '#34c759'
-          btn.style.borderColor = '#34c759'
-          btn.style.color = '#fff'
-          // 1.2 秒后关闭本标签页，让用户回到简历页面
-          setTimeout(() => window.close(), 1200)
-          return
-        } catch(e) {
-          console.warn('postMessage failed, falling back to localStorage', e)
-        }
-      }
-
-      // ── 方案 B：localStorage + 跳转（opener 不可用时的兜底）──────────
+      // ── 始终写入 localStorage（确保任何情况下都能回填）──────────────
       try {
         localStorage.setItem('resume-photo-pending', dataUrl)
       } catch(e) {
         alert('存储失败：' + e.message); btn.disabled = false; btn.textContent = '📋 发送到简历'; return
       }
-      // 跳转到简历 Review 页（BrowserRouter，无 hash）
+
+      // ── 同时尝试 postMessage 通知已打开的简历标签页──────────────────
+      if (window.opener && !window.opener.closed) {
+        try {
+          window.opener.postMessage({ type: 'resume-photo', dataUrl }, '*')
+        } catch(e) {
+          console.warn('postMessage failed, photo already saved to localStorage', e)
+        }
+      }
+
+      // ── 跳转到简历 Review 页──────────────────────────────────────────
       const base = window.location.pathname.replace(/\/photo-tool\.html.*$/, '')
       const reviewUrl = window.location.origin + base + '/step/review'
       btn.textContent = '✅ 跳转中…'
