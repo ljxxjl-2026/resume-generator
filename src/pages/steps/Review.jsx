@@ -42,15 +42,28 @@ export default function Review() {
   const [error, setError] = useState('')
   const [photoImported, setPhotoImported] = useState(false)
 
-  // On mount: check localStorage for photo transferred from photo tool
+  // Receive photo from photo-tool tab via postMessage (primary path)
+  // or from localStorage (fallback when opener is unavailable)
   useEffect(() => {
+    const handleMessage = (e) => {
+      if (e.data?.type === 'resume-photo' && e.data?.dataUrl) {
+        setBasic({ photoDataUrl: e.data.dataUrl })
+        setPhotoImported(true)
+        setTimeout(() => setPhotoImported(false), 4000)
+      }
+    }
+    window.addEventListener('message', handleMessage)
+
+    // Fallback: check localStorage (e.g., photo tool couldn't reach opener)
     const pending = localStorage.getItem('resume-photo-pending')
     if (pending) {
       setBasic({ photoDataUrl: pending })
       localStorage.removeItem('resume-photo-pending')
       setPhotoImported(true)
-      setTimeout(() => setPhotoImported(false), 3000)
+      setTimeout(() => setPhotoImported(false), 4000)
     }
+
+    return () => window.removeEventListener('message', handleMessage)
   }, [])
 
   const b = store.basic
