@@ -47,7 +47,7 @@ function ExperienceEntry({ entry, onUpdate, onRemove, index }) {
         <BulletBuilder
           bullets={entry.bullets}
           onChange={(bullets) => onUpdate({ bullets })}
-          prompt="💡 建议分点描述，每条以动词开头，如"负责…""优化…""完成…""
+          prompt="💡 建议分点描述，每条以动词开头，如'负责...' '优化...' '完成...'"
         />
       </div>
     </div>
